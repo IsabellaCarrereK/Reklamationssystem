@@ -13,6 +13,31 @@ def get_connection():
     return connection
 
 
+def get_receipt_items(receipt_id):
+    with closing(get_connection()) as connection:
+        cursor = connection.execute(
+            """
+            SELECT
+                receipts.receipt_id,
+                receipts.purchase_date,
+                receipt_items.item_id,
+                products.product_name,
+                products.brand,
+                receipt_items.purchase_price,
+                receipt_items.quantity
+            FROM receipts
+            JOIN receipt_items
+                ON receipts.receipt_id = receipt_items.receipt_id
+            JOIN products
+                ON receipt_items.product_id = products.product_id
+            WHERE receipts.receipt_id = ?
+            """,
+            (receipt_id,),
+        )
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
 def create_tables():
     with closing(get_connection()) as connection, connection:
 
