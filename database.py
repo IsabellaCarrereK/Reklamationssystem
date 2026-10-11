@@ -86,3 +86,37 @@ def create_tables():
                     REFERENCES receipt_items(item_id)
             )
         """)
+
+        claim_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(claims)")
+        }
+        if "received_by" not in claim_columns:
+            connection.execute("ALTER TABLE claims ADD COLUMN received_by TEXT")
+
+
+def create_claim(item_id, customer_name, customer_phone, reason, description, received_by):
+    with closing(get_connection()) as connection, connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO claims (
+                item_id,
+                customer_name,
+                customer_phone,
+                reason,
+                description,
+                status,
+                received_by
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item_id,
+                customer_name,
+                customer_phone,
+                reason,
+                description,
+                "Registrerad",
+                received_by,
+            ),
+        )
+        return cursor.lastrowid

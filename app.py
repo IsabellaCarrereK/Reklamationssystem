@@ -1,7 +1,7 @@
 from datetime import date
 
 import streamlit as st
-from database import get_receipt_items
+from database import create_claim, get_receipt_items
 
 st.set_page_config(
     page_title="Reklamationssystem",
@@ -25,6 +25,9 @@ st.subheader("Sök kvitto")
 st.session_state.setdefault("searched_receipt_id", None)
 st.session_state.setdefault("receipt_items", [])
 st.session_state.setdefault("selected_receipt_item_id", None)
+st.session_state.setdefault("claim_form_open", False)
+st.session_state.setdefault("claim_form_item_id", None)
+st.session_state.setdefault("created_claims", {})
 
 with st.form("receipt_search"):
     receipt_id = st.text_input(
@@ -41,10 +44,14 @@ if search_clicked:
         st.session_state.searched_receipt_id = None
         st.session_state.receipt_items = []
         st.session_state.selected_receipt_item_id = None
+        st.session_state.claim_form_open = False
+        st.session_state.claim_form_item_id = None
         st.warning("Ange ett kvittonummer för att söka.")
     else:
         st.session_state.searched_receipt_id = receipt_id
         st.session_state.receipt_items = get_receipt_items(receipt_id)
+        st.session_state.claim_form_open = False
+        st.session_state.claim_form_item_id = None
         st.session_state.selected_receipt_item_id = (
             st.session_state.receipt_items[0]["item_id"]
             if st.session_state.receipt_items
@@ -87,10 +94,83 @@ if st.session_state.searched_receipt_id:
             key="selected_receipt_item_id",
         )
 
-        if st.button("Skapa reklamationsärende"):
-            selected_item = items_by_id[selected_item_id]
-            st.info(
-                "Ärende kan skapas för: "
-                f"{selected_item['product_name']} "
-                f"({selected_item['brand'] or 'Okänt varumärke'})."
+        if (
+            st.session_state.claim_form_open
+            and st.session_state.claim_form_item_id != selected_item_id
+        ):
+            st.session_state.claim_form_open = False
+            st.session_state.claim_form_item_id = None
+
+        selected_item = items_by_id[selected_item_id]
+        existing_claim_id = st.session_state.created_claims.get(selected_item_id)
+
+        if existing_claim_id is not None:
+            st.success(
+                f"Reklamationsärende {existing_claim_id} är registrerat "
+                "med status Registrerad."
             )
+        elif not st.session_state.claim_form_open:
+            if st.button("Skapa reklamationsärende"):
+                st.session_state.claim_form_open = True
+                st.session_state.claim_form_item_id = selected_item_id
+
+        if (
+            st.session_state.claim_form_open
+            and st.session_state.claim_form_item_id == selected_item_id
+            and existing_claim_id is None
+        ):
+            st.write(
+                f"Reklamation för **{selected_item['product_name']}** "
+                f"på kvitto **{st.session_state.searched_receipt_id}**."
+            )
+
+            with st.form(f"claim_form_{selected_item_id}"):
+                customer_name = st.text_input(
+                    "Kundens namn", key=f"claim_customer_name_{selected_item_id}"
+                )
+                customer_phone = st.text_input(
+                    "Kundens telefonnummer",
+                    key=f"claim_customer_phone_{selected_item_id}",
+                )
+                reason = st.selectbox(
+                    "Reklamationsorsak",
+                    ["", "Trasig vara", "Kvalitetsfel", "Saknad del", "Annat"],
+                    format_func=lambda value: value or "Välj orsak",
+                    key=f"claim_reason_{selected_item_id}",
+                )
+                description = st.text_area(
+                    "Felbeskrivning", key=f"claim_description_{selected_item_id}"
+                )
+                received_by = st.text_input(
+                    "Mottagande personal",
+                    key=f"claim_received_by_{selected_item_id}",
+                )
+                claim_submitted = st.form_submit_button("Registrera reklamation")
+
+            if claim_submitted:
+                required_values = (
+                    customer_name,
+                    customer_phone,
+                    description,
+                    received_by,
+                )
+                if any(not value.strip() for value in required_values):
+                    st.error("Fyll i alla obligatoriska textfält.")
+                elif not reason:
+                    st.error("Välj en reklamationsorsak.")
+                else:
+                    claim_id = create_claim(
+                        selected_item_id,
+                        customer_name.strip(),
+                        customer_phone.strip(),
+                        reason,
+                        description.strip(),
+                        received_by.strip(),
+                    )
+                    st.session_state.created_claims[selected_item_id] = claim_id
+                    st.session_state.claim_form_open = False
+                    st.session_state.claim_form_item_id = None
+                    st.success(
+                        f"Reklamationsärende {claim_id} är registrerat "
+                        "med status Registrerad."
+                    )
