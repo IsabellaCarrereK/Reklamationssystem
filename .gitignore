@@ -1,0 +1,13 @@
+# Virtuell Python-miljö
+.venv/
+
+# Python-cache
+__pycache__/
+*.pyc
+
+# Lokal databas
+*.db
+
+# Lokala inställningar och hemligheter
+.env
+.streamlit/secrets.toml
