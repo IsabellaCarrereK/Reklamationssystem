@@ -1,7 +1,13 @@
 from datetime import date
+import sqlite3
 
 import streamlit as st
-from database import create_claim, get_all_claims, get_receipt_items
+from database import (
+    create_claim,
+    get_all_claims,
+    get_receipt_items,
+    update_claim_assessment,
+)
 
 st.set_page_config(
     page_title="Reklamationssystem",
@@ -233,3 +239,47 @@ else:
                 display_claim_value(selected_claim["received_by"]),
             )
             st.write("**Registreringsdatum:**", display_claim_value(selected_claim["created_at"]))
+
+    st.subheader("Bedöm reklamation")
+    with st.form(f"assessment_form_{selected_claim['claim_id']}"):
+        decision = st.selectbox(
+            "Beslut",
+            options=["Godkänd", "Nekad"],
+            index=None,
+            placeholder="Välj beslut",
+            key=f"assessment_decision_{selected_claim['claim_id']}",
+        )
+        resolution = st.selectbox(
+            "Åtgärd (endast vid godkännande)",
+            options=["Reparation", "Återbetalning", "Ny vara"],
+            index=None,
+            placeholder="Välj åtgärd",
+            key=f"assessment_resolution_{selected_claim['claim_id']}",
+        )
+        assessed_by_staff_id = st.text_input(
+            "Personal-ID",
+            key=f"assessment_staff_id_{selected_claim['claim_id']}",
+        )
+        assessment_submitted = st.form_submit_button("Spara bedömning")
+
+    if assessment_submitted:
+        if not assessed_by_staff_id.strip():
+            st.error("Ange personal-ID innan bedömningen sparas.")
+        elif decision is None:
+            st.error("Välj om reklamationen ska godkännas eller nekas.")
+        elif decision == "Godkänd" and resolution is None:
+            st.error("Välj en åtgärd för den godkända reklamationen.")
+        else:
+            try:
+                update_claim_assessment(
+                    selected_claim["claim_id"],
+                    decision,
+                    resolution if decision == "Godkänd" else None,
+                    assessed_by_staff_id.strip(),
+                )
+            except sqlite3.Error:
+                st.error("Bedömningen kunde inte sparas på grund av ett databasfel.")
+            else:
+                st.success(
+                    f"Bedömningen för ärende {selected_claim['claim_id']} har sparats."
+                )
