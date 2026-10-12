@@ -81,6 +81,9 @@ def create_tables():
                 status TEXT NOT NULL DEFAULT 'Registrerad',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 decision TEXT,
+                resolution TEXT,
+                assessed_by_staff_id TEXT,
+                assessed_at TEXT,
                 closed_at TEXT,
                 FOREIGN KEY (item_id)
                     REFERENCES receipt_items(item_id)
@@ -92,6 +95,16 @@ def create_tables():
         }
         if "received_by" not in claim_columns:
             connection.execute("ALTER TABLE claims ADD COLUMN received_by TEXT")
+        for column_name in (
+            "decision",
+            "resolution",
+            "assessed_by_staff_id",
+            "assessed_at",
+        ):
+            if column_name not in claim_columns:
+                connection.execute(
+                    f"ALTER TABLE claims ADD COLUMN {column_name} TEXT"
+                )
 
 
 def create_claim(item_id, customer_name, customer_phone, reason, description, received_by):
@@ -120,3 +133,48 @@ def create_claim(item_id, customer_name, customer_phone, reason, description, re
             ),
         )
         return cursor.lastrowid
+
+
+def update_claim_assessment(claim_id, decision, resolution, assessed_by_staff_id):
+    with closing(get_connection()) as connection, connection:
+        connection.execute(
+            """
+            UPDATE claims
+            SET
+                decision = ?,
+                resolution = ?,
+                assessed_by_staff_id = ?,
+                assessed_at = CURRENT_TIMESTAMP
+            WHERE claim_id = ?
+            """,
+            (decision, resolution, assessed_by_staff_id, claim_id),
+        )
+
+
+def get_all_claims():
+    with closing(get_connection()) as connection:
+        cursor = connection.execute(
+            """
+            SELECT
+                claims.claim_id,
+                claims.customer_name,
+                claims.customer_phone,
+                claims.reason,
+                claims.description,
+                claims.status,
+                claims.received_by,
+                claims.created_at,
+                products.product_name,
+                receipts.receipt_id
+            FROM claims
+            JOIN receipt_items
+                ON claims.item_id = receipt_items.item_id
+            JOIN products
+                ON receipt_items.product_id = products.product_id
+            JOIN receipts
+                ON receipt_items.receipt_id = receipts.receipt_id
+            ORDER BY claims.claim_id DESC
+            """
+        )
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]

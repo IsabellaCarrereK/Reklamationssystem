@@ -1,7 +1,7 @@
 from datetime import date
 
 import streamlit as st
-from database import create_claim, get_receipt_items
+from database import create_claim, get_all_claims, get_receipt_items
 
 st.set_page_config(
     page_title="Reklamationssystem",
@@ -174,3 +174,62 @@ if st.session_state.searched_receipt_id:
                         f"Reklamationsärende {claim_id} är registrerat "
                         "med status Registrerad."
                     )
+
+st.divider()
+st.subheader("Registrerade reklamationer")
+
+claims = get_all_claims()
+if not claims:
+    st.info("Det finns inga registrerade reklamationer ännu.")
+else:
+    st.dataframe(
+        [
+            {
+                "Ärendenummer": claim["claim_id"],
+                "Kund": claim["customer_name"],
+                "Produkt": claim["product_name"],
+                "Kvitto": claim["receipt_id"],
+                "Status": claim["status"],
+                "Registrerad": claim["created_at"],
+            }
+            for claim in claims
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    claim_by_id = {claim["claim_id"]: claim for claim in claims}
+    st.subheader("Ärendedetaljer")
+    selected_claim_id = st.selectbox(
+        "Välj reklamationsärende",
+        options=list(claim_by_id),
+        format_func=lambda claim_id: (
+            f"Ärende {claim_id} - "
+            f"{claim_by_id[claim_id]['product_name'] or 'Produkt saknas'}"
+        ),
+        key="selected_claim_details",
+    )
+    selected_claim = claim_by_id[selected_claim_id]
+
+    def display_claim_value(value):
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return "Ej angivet"
+        return value
+
+    with st.container():
+        left_column, right_column = st.columns(2)
+        with left_column:
+            st.write("**Ärendenummer:**", display_claim_value(selected_claim["claim_id"]))
+            st.write("**Kundnamn:**", display_claim_value(selected_claim["customer_name"]))
+            st.write("**Telefonnummer:**", display_claim_value(selected_claim["customer_phone"]))
+            st.write("**Produkt:**", display_claim_value(selected_claim["product_name"]))
+            st.write("**Kvittonummer:**", display_claim_value(selected_claim["receipt_id"]))
+        with right_column:
+            st.write("**Reklamationsorsak:**", display_claim_value(selected_claim["reason"]))
+            st.write("**Felbeskrivning:**", display_claim_value(selected_claim["description"]))
+            st.write("**Status:**", display_claim_value(selected_claim["status"]))
+            st.write(
+                "**Mottagande personal:**",
+                display_claim_value(selected_claim["received_by"]),
+            )
+            st.write("**Registreringsdatum:**", display_claim_value(selected_claim["created_at"]))
