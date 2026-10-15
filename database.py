@@ -165,7 +165,11 @@ def get_all_claims():
                 claims.received_by,
                 claims.created_at,
                 products.product_name,
-                receipts.receipt_id
+                receipts.receipt_id,
+                claims.decision,
+                claims.resolution,
+                claims.assessed_by_staff_id,
+                claims.assessed_at
             FROM claims
             JOIN receipt_items
                 ON claims.item_id = receipt_items.item_id
@@ -178,3 +182,22 @@ def get_all_claims():
         )
         columns = [column[0] for column in cursor.description]
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def get_existing_claim_for_item(item_id):
+    with closing(get_connection()) as connection:
+        cursor = connection.execute(
+            """
+            SELECT claim_id, status, decision
+            FROM claims
+            WHERE item_id = ? AND status != ?
+            ORDER BY claim_id DESC
+            LIMIT 1
+            """,
+            (item_id, "Avslutad"),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        columns = [column[0] for column in cursor.description]
+        return dict(zip(columns, row))

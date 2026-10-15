@@ -5,6 +5,7 @@ import streamlit as st
 from database import (
     create_claim,
     get_all_claims,
+    get_existing_claim_for_item,
     get_receipt_items,
     update_claim_assessment,
 )
@@ -108,9 +109,32 @@ if st.session_state.searched_receipt_id:
             st.session_state.claim_form_item_id = None
 
         selected_item = items_by_id[selected_item_id]
+        existing_claim = get_existing_claim_for_item(selected_item_id)
         existing_claim_id = st.session_state.created_claims.get(selected_item_id)
+        if existing_claim is None and existing_claim_id is not None:
+            st.session_state.created_claims.pop(selected_item_id, None)
+            existing_claim_id = None
 
-        if existing_claim_id is not None:
+        if existing_claim is not None:
+            if st.session_state.claim_form_item_id == selected_item_id:
+                st.session_state.claim_form_open = False
+                st.session_state.claim_form_item_id = None
+            decision_value = existing_claim.get("decision")
+            if decision_value is None or (
+                isinstance(decision_value, str) and not decision_value.strip()
+            ):
+                decision_value = "Ej bedömd"
+            st.info("**Reklamation redan registrerad**")
+            st.write(
+                "**Ärendenummer:**",
+                existing_claim.get("claim_id", "Ej angivet"),
+            )
+            st.write(
+                "**Status:**",
+                existing_claim.get("status") or "Ej angivet",
+            )
+            st.write("**Beslut:**", decision_value)
+        elif existing_claim_id is not None:
             st.success(
                 f"Reklamationsärende {existing_claim_id} är registrerat "
                 "med status Registrerad."
@@ -124,6 +148,7 @@ if st.session_state.searched_receipt_id:
             st.session_state.claim_form_open
             and st.session_state.claim_form_item_id == selected_item_id
             and existing_claim_id is None
+            and existing_claim is None
         ):
             st.write(
                 f"Reklamation för **{selected_item['product_name']}** "
@@ -240,46 +265,73 @@ else:
             )
             st.write("**Registreringsdatum:**", display_claim_value(selected_claim["created_at"]))
 
-    st.subheader("Bedöm reklamation")
-    with st.form(f"assessment_form_{selected_claim['claim_id']}"):
-        decision = st.selectbox(
-            "Beslut",
-            options=["Godkänd", "Nekad"],
-            index=None,
-            placeholder="Välj beslut",
-            key=f"assessment_decision_{selected_claim['claim_id']}",
+    st.subheader("Registrerad bedömning")
+    decision_value = selected_claim.get("decision")
+    has_decision = decision_value is not None and not (
+        isinstance(decision_value, str) and not decision_value.strip()
+    )
+    if not has_decision:
+        st.info("Ingen bedömning har registrerats ännu.")
+    else:
+        resolution_value = selected_claim.get("resolution")
+        if resolution_value is None or (
+            isinstance(resolution_value, str) and not resolution_value.strip()
+        ):
+            resolution_value = "Ingen åtgärd"
+        st.write("**Beslut:**", display_claim_value(decision_value))
+        st.write("**Åtgärd:**", display_claim_value(resolution_value))
+        st.write(
+            "**Bedömd av (personal-ID):**",
+            display_claim_value(selected_claim.get("assessed_by_staff_id")),
         )
-        resolution = st.selectbox(
-            "Åtgärd (endast vid godkännande)",
-            options=["Reparation", "Återbetalning", "Ny vara"],
-            index=None,
-            placeholder="Välj åtgärd",
-            key=f"assessment_resolution_{selected_claim['claim_id']}",
+        st.write(
+            "**Bedömningsdatum:**",
+            display_claim_value(selected_claim.get("assessed_at")),
         )
-        assessed_by_staff_id = st.text_input(
-            "Personal-ID",
-            key=f"assessment_staff_id_{selected_claim['claim_id']}",
-        )
-        assessment_submitted = st.form_submit_button("Spara bedömning")
 
-    if assessment_submitted:
-        if not assessed_by_staff_id.strip():
-            st.error("Ange personal-ID innan bedömningen sparas.")
-        elif decision is None:
-            st.error("Välj om reklamationen ska godkännas eller nekas.")
-        elif decision == "Godkänd" and resolution is None:
-            st.error("Välj en åtgärd för den godkända reklamationen.")
-        else:
-            try:
-                update_claim_assessment(
-                    selected_claim["claim_id"],
-                    decision,
-                    resolution if decision == "Godkänd" else None,
-                    assessed_by_staff_id.strip(),
-                )
-            except sqlite3.Error:
-                st.error("Bedömningen kunde inte sparas på grund av ett databasfel.")
+    if has_decision:
+        st.info("Det här ärendet är redan bedömt. Beslutet kan inte ändras här.")
+    else:
+        st.subheader("Bedöm reklamation")
+        with st.form(f"assessment_form_{selected_claim['claim_id']}"):
+            decision = st.selectbox(
+                "Beslut",
+                options=["Godkänd", "Nekad"],
+                index=None,
+                placeholder="Välj beslut",
+                key=f"assessment_decision_{selected_claim['claim_id']}",
+            )
+            resolution = st.selectbox(
+                "Åtgärd (endast vid godkännande)",
+                options=["Reparation", "Återbetalning", "Ny vara"],
+                index=None,
+                placeholder="Välj åtgärd",
+                key=f"assessment_resolution_{selected_claim['claim_id']}",
+            )
+            assessed_by_staff_id = st.text_input(
+                "Personal-ID",
+                key=f"assessment_staff_id_{selected_claim['claim_id']}",
+            )
+            assessment_submitted = st.form_submit_button("Spara bedömning")
+
+        if assessment_submitted:
+            if not assessed_by_staff_id.strip():
+                st.error("Ange personal-ID innan bedömningen sparas.")
+            elif decision is None:
+                st.error("Välj om reklamationen ska godkännas eller nekas.")
+            elif decision == "Godkänd" and resolution is None:
+                st.error("Välj en åtgärd för den godkända reklamationen.")
             else:
-                st.success(
-                    f"Bedömningen för ärende {selected_claim['claim_id']} har sparats."
-                )
+                try:
+                    update_claim_assessment(
+                        selected_claim["claim_id"],
+                        decision,
+                        resolution if decision == "Godkänd" else None,
+                        assessed_by_staff_id.strip(),
+                    )
+                except sqlite3.Error:
+                    st.error("Bedömningen kunde inte sparas på grund av ett databasfel.")
+                else:
+                    st.success(
+                        f"Bedömningen för ärende {selected_claim['claim_id']} har sparats."
+                    )
