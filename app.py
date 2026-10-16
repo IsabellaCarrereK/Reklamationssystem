@@ -8,6 +8,19 @@ from database import (
     get_existing_claim_for_item,
     get_receipt_items,
     update_claim_assessment,
+    update_claim_status,
+)
+from documents import (
+    generate_customer_receipt_html,
+    generate_store_claim_html,
+)
+
+CLAIM_STATUSES = (
+    "Registrerad",
+    "Under bedömning",
+    "Inlämnad för reparation",
+    "Redo att hämtas av kund",
+    "Avslutad",
 )
 
 st.set_page_config(
@@ -241,6 +254,10 @@ else:
         key="selected_claim_details",
     )
     selected_claim = claim_by_id[selected_claim_id]
+    status_update_message = st.session_state.pop(
+        "claim_status_update_message", None
+    )
+    claim_number = selected_claim["claim_id"]
 
     def display_claim_value(value):
         if value is None or (isinstance(value, str) and not value.strip()):
@@ -259,11 +276,60 @@ else:
             st.write("**Reklamationsorsak:**", display_claim_value(selected_claim["reason"]))
             st.write("**Felbeskrivning:**", display_claim_value(selected_claim["description"]))
             st.write("**Status:**", display_claim_value(selected_claim["status"]))
+            if status_update_message:
+                st.success(status_update_message)
             st.write(
                 "**Mottagande personal:**",
                 display_claim_value(selected_claim["received_by"]),
             )
             st.write("**Registreringsdatum:**", display_claim_value(selected_claim["created_at"]))
+
+    st.subheader("Reklamationsdokument")
+    st.download_button(
+        "Ladda ner inlämningsbevis för kund",
+        data=generate_customer_receipt_html(selected_claim).encode("utf-8"),
+        file_name=f"inlamningsbevis_arende_{claim_number}.html",
+        mime="text/html",
+        key=f"customer_receipt_{claim_number}",
+    )
+    st.download_button(
+        "Ladda ner reklamationsunderlag för butik",
+        data=generate_store_claim_html(selected_claim).encode("utf-8"),
+        file_name=f"reklamationsunderlag_arende_{claim_number}.html",
+        mime="text/html",
+        key=f"store_claim_{claim_number}",
+    )
+
+    st.subheader("Uppdatera status")
+    current_status = selected_claim["status"]
+    with st.form(f"status_form_{selected_claim['claim_id']}"):
+        status = st.selectbox(
+            "Status",
+            options=CLAIM_STATUSES,
+            index=(
+                CLAIM_STATUSES.index(current_status)
+                if current_status in CLAIM_STATUSES
+                else None
+            ),
+            placeholder="Välj status",
+            key=f"claim_status_{selected_claim['claim_id']}",
+        )
+        status_submitted = st.form_submit_button("Spara status")
+
+    if status_submitted:
+        if status is None:
+            st.error("Välj en status innan ändringen sparas.")
+        else:
+            try:
+                update_claim_status(selected_claim["claim_id"], status)
+            except sqlite3.Error:
+                st.error("Statusen kunde inte sparas på grund av ett databasfel.")
+            else:
+                st.session_state.claim_status_update_message = (
+                    f"Statusen för ärende {selected_claim['claim_id']} "
+                    f"har sparats: {status}."
+                )
+                st.rerun()
 
     st.subheader("Registrerad bedömning")
     decision_value = selected_claim.get("decision")

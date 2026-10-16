@@ -151,6 +151,18 @@ def update_claim_assessment(claim_id, decision, resolution, assessed_by_staff_id
         )
 
 
+def update_claim_status(claim_id, status):
+    with closing(get_connection()) as connection, connection:
+        connection.execute(
+            """
+            UPDATE claims
+            SET status = ?
+            WHERE claim_id = ?
+            """,
+            (status, claim_id),
+        )
+
+
 def get_all_claims():
     with closing(get_connection()) as connection:
         cursor = connection.execute(
